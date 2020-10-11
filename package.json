@@ -2,11 +2,11 @@
   "name": "discord-bot",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "bot.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "joshua fuckin mother fuckin dietrich",
+  "author": "Joshua Dietrich",
   "license": "ISC",
   "dependencies": {
     "canvas": "^2.6.1",
