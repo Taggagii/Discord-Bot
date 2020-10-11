@@ -110,7 +110,7 @@ client.on("message", async message => {
         let memberHasAccessTo = (command, message) => {
             if (membersPermissions >= commands[command].MINPERMISSIONS)
                 return true;
-            message.channel.send(`You do not have high enough permissions to access ".${command}".\nType ".commands" to see command you have permissions to access.`)
+            message.channel.send(`You do not have high enough permissions to access ".${command}".\nType ".commands" to see commands you have permissions to access.`)
             return false;
         }
         
