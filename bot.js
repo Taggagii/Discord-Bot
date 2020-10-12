@@ -39,6 +39,16 @@ const commands = { //command name, passable arguments, discription, minimum perm
         ARGS : "blank, (args = {@username})", 
         DISCRIPTION : "displays the profile picture, displayname, and usernmae of the given user", //TBC
         MINPERMISSIONS : 2
+    },
+    "deletePastMessages" : {
+        ARGS : "args = number of messages to delete", //maybe add user
+        DISCRIPTION : "",
+        MINPERMISSIONS : 4
+    },
+    "tic" : {
+        ARGS : "",
+        DISCRIPTION : "plays tick tac toe",
+        MINPERMISSIONS : 4
     }
 }
 
@@ -122,7 +132,7 @@ client.on("message", async message => {
                     var outputString = "";
                     Object.keys(commands).forEach(command => {
                         if (membersPermissions >= commands[command].MINPERMISSIONS)
-                            outputString += `.${command} ${commands[command].ARGS}\n${commands[command].DISCRIPTION}\n\n`
+                            outputString += `.${command} | ${commands[command].ARGS} |\n${commands[command].DISCRIPTION}\n\n`
                     });
                     message.channel.send(outputString);
                 }
@@ -237,13 +247,8 @@ client.on("message", async message => {
                     const canvas = Canvas.createCanvas(1200, 250);
                     const context = canvas.getContext('2d');
                     
-    //                const background = await Canvas.loadImage('wallpaper.jpg');
-                    //context.drawImage(background, 0, 0, canvas.width, canvas.height);
-                    //context.strokeStyle = "#74037b";
-                    //context.strokeRect(0, 0, canvas.width, canvas.height);
-                    
                     context.font = '60px sans-serif';
-                    context.fillStyle = 'blue';
+                    context.fillStyle = 'yellow';
                     context.fillText(`${displayedName} | ${displayedUsername}`, canvas.width / 2.5, canvas.height / 1.8);
                     
                     context.beginPath();
@@ -254,9 +259,50 @@ client.on("message", async message => {
                     const avatar = await Canvas.loadImage(displayedAvatar);
                     context.drawImage(avatar, 25, 25, 200, 200);
                     
-                    const attachment = new Discord.MessageAttachment(canvas.toBuffer(), 'WHERE THE FUCK IS THE DISPLAY NAME UNDEFINED BITCH.png');
+                    const attachment = new Discord.MessageAttachment(canvas.toBuffer(), 'Profile Info Image.png');
                     message.channel.send(attachment);
                 } 
+                break;
+
+            case commandList[7]: //deletePastMessages
+                if (memberHasAccessTo(commandList[7], message) && 1 === 2)
+                {
+                    var deleteBackDistance = 1;
+                    if (args.length != 0 && !isNaN(args[0]) && args[0] > 0)
+                        deleteBackDistance = args[0];
+
+                    var readMessages = await message.channel.messages.fetch({ limit : deleteBackDistance});
+                    message.channel.bulkDelete(readMessages);
+                }
+                else 
+                    message.channel.send("this command is forbidden fuck off")
+                break;
+
+            case commandList[8]: //tic
+                if (memberHasAccessTo(commandList[8]))
+                {
+                    let playerOne = message.member;
+                    if (args.length === 0)
+                    {
+                        message.channel.send("You must '@' mention the other player to play tic-tac-toe");
+                        return;
+                    }
+                    let playerTwo = message.mentions.members.first();
+                    message.channel.send(`${playerOne.displayName} is playing tic-tac-toe with ${message.mentions.members.first().displayName}`)
+                    message.channel.send(`user ids : ${playerOne.id} ${playerTwo.id}`);
+                    function draw_board(gameData, message)
+                    {
+                        var outputBoard = gameData.slice(0, 3).join('  ');
+                        outputBoard += "\n";
+                        outputBoard += gameData.slice(3, 6).join('  ');
+                        outputBoard += "\n";
+                        outputBoard += gameData.slice(6, 9).join('  ');
+                        message.channel.send(outputBoard);
+                    }
+                    var gameData = ['-', '-', '-', '-', '-', '-', '-', '-', '-',];
+                    draw_board(gameData, message);
+
+                }
                 break;
 
             case "..":
