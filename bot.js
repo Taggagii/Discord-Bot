@@ -1,6 +1,12 @@
 const Discord = require('discord.js');
 const Canvas = require('canvas');
 const client = new Discord.Client();
+
+const ytdl = require('ytdl-core');
+const yts = require('yt-search');
+const { getInfo } = require('ytdl-core');
+
+
 require("dotenv").config();
 const PREFIX = ".";
 
@@ -42,15 +48,30 @@ const commands = { //command name, passable arguments, discription, minimum perm
     },
     "deletePastMessages" : {
         ARGS : "args = number of messages to delete", //maybe add user
-        DISCRIPTION : "",
+        DISCRIPTION : "deletes messages back (to a max of 100) from the message command based on the input argument. The given command is included in the deletion count",
         MINPERMISSIONS : 4
     },
     "tic" : {
-        ARGS : "",
-        DISCRIPTION : "plays tick tac toe",
+        ARGS : "(args = {@username, 'games'})",
+        DISCRIPTION : "plays tick tac toe with the chosen user and displays the current games when the 'game' argument is entered",
+        MINPERMISSIONS : 2
+    },
+    "music" : {
+        ARGS : "(args = {play {song name, song url}, search {song name}}, queue, pause, resume)",
+        DISCRIPTION : "runs the music commands for this bot. Enter the music command followed by a given argument (e.g: play, search) to either play the audio of a video (song) off YouTube, or search to get the url the bot thinks you're asking for and make sure you have the correct name",
         MINPERMISSIONS : 2
     }
 }
+const commandList = Object.keys(commands);
+
+
+//music data 
+let vol = 5;
+let queue = [];
+let playing = false;
+let dispatcher = '';
+
+
 
 //tictactoe data
 var games = {};
@@ -104,7 +125,7 @@ function check_win(gameValues, symbol, message)
 
 
 
-const commandList = Object.keys(commands);
+
 
 const OwnerId = "671090972272230423";
 
@@ -112,7 +133,7 @@ const OwnerId = "671090972272230423";
 Higher levels have the permissions of all precursory levels
 level 0 (no level)           : User can interact with the bot enough to understand that they can't interact with the bot
 level 1 (basic level)        : User can perform basic interaction with the bot to get information about themselves and the server, most fun commands are open to basic members
-level 2 (intermediate level) : User can get other members information 
+level 2 (intermediate level) : User can do everything fun (for those who aren't sadistic that is)
 level 3 (advanced level)     : Users may kick other members 
 level 4 (dangerous level)    : Users may ban other members, disconnect members from voice chat
 */
@@ -172,7 +193,7 @@ client.on("message", async message => {
         let memberHasAccessTo = (command) => {
             if (membersPermissions >= commands[command].MINPERMISSIONS)
                 return true;
-                message.channel.send(`You do not have high enough permissions to access ".${command}".\nType ".commands" to see commands you have permissions to access.`)
+                message.channel.send(`You do not have high enough permissions to access "${PREFIX}${command}".\nType "${PREFIX}commands" to see commands you have permissions to access.`)
             return false;
         }
         
@@ -204,7 +225,9 @@ client.on("message", async message => {
                 if (memberHasAccessTo(commandList[2]))
                 {
                     if (message.author.id === OwnerId)
-                        message.channel.send("You are authorized. Shutting Down").then(m => {client.destroy();});
+                    {
+                        message.channel.send("You are authorized. Shutting Down").then(m => {client.destroy();}).then(() => {throw new "SHUTDOWN COMMAND CALLED";});
+                    }
                     else
                         message.channel.send("Special permissions are required for this command.")
                 }
@@ -221,7 +244,7 @@ client.on("message", async message => {
                     }
                     if (args.includes("username"))
                         outputString += `Your username is : ${message.author.username}\n`;
-                    if (containsAny(args, ["discriminator", "discrim", "d", "dis", "disc"]))
+                    if (containsAnyOfWord(args, "discriminator"))
                         outputString += `Your discriminator is : ${message.author.discriminator}\n`;
                     if (args.includes("id"))
                         outputString += `Your id is : ${message.author.id}`;
@@ -327,7 +350,7 @@ client.on("message", async message => {
                     message.channel.bulkDelete(readMessages);
                 }
                 else 
-                    message.channel.send("this command is forbidden fuck off")
+                    message.channel.send("this command is forbidden, fuck off")
                 break;
 
             case commandList[8]: //tic
@@ -338,7 +361,7 @@ client.on("message", async message => {
                         let player = message.member.id;
                         if (!games[player])
                         {
-                            message.reply("You are not currently in a game, you can start one by typeing '.tic args = {@username}'");
+                            message.reply(`You are not currently in a game, you can start one by typing '${PREFIX}tic args = {@username}'`);
                             break;
                         }
                         if (player !== games[player][1][games[player][2]].id)
@@ -408,13 +431,14 @@ client.on("message", async message => {
                         let nextPlayer = (games[player][2] + 1) % 2;
                         games[player][2] = nextPlayer;
                         games[games[player][1][nextPlayer].id] = games[player];
+                        message.channel.send(`<@${games[player][1][nextPlayer].id}> is it your turn`);
                         break;
                     }
                     if (args.includes("games"))
                     {
                         if (Object.keys(games).length === 0)
                         {
-                            message.channel.send("There are currently no games running. Start a game by typing '.tic args = {@username}'");
+                            message.channel.send(`There are currently no games running. Start a game by typing '${PREFIX}tic args = {@username}'`);
                         }
                         for (let game in games)
                         {
@@ -437,7 +461,7 @@ client.on("message", async message => {
                         draw_board(gameData, message);
     
                         let firstPlayer = Math.floor(Math.random() * 10) % 2;
-                        message.channel.send(`${players[firstPlayer].displayName} moves first`);                                                                            //FOR TESTING
+                        message.channel.send(`<@${players[firstPlayer].id}> moves first`);
                         games[players[firstPlayer].id] = [gameData, players, firstPlayer];
                         break;
                     }
@@ -445,13 +469,127 @@ client.on("message", async message => {
                     
                 }
                 break;
-            
+            case commandList[9]: //music
+                if (memberHasAccessTo(commandList[9]))
+                {
+                    async function startMusic(voiceChannel)
+                    {
+                        if (queue.length !== 0)
+                        {
+                            message.channel.send(`Playing | ${queue[0].title} | ${queue[0].url} |`).then(msg => {
+                                msg.suppressEmbeds();
+                            });
+
+                            playing = true;
+                            voiceChannel.join().then(connection => {
+                                dispatcher = connection.play(ytdl(queue[0].url, {filter: "audioonly"}));
+                                dispatcher.on("finish", () => {
+                                    queue.shift();
+                                    startMusic(voiceChannel);
+                                });
+                            })
+                        }
+                        else
+                        {
+                            playing = false;
+                            voiceChannel.leave();
+                        }
+                    }
+                    if (args[0] === "play")
+                    {
+                        const voiceChannel = message.member.voice.channel;
+                        if (!voiceChannel)
+                        {
+                            message.reply("Please join a voice channel to use this bot");
+                            break;
+                        }
+                        //deciding if the person was using a url or a name
+                        let stream = "";
+                        let song = {
+                            title : "name",
+                            url : "url",
+                            length : "length"
+                        };
+                        if (!ytdl.validateURL(args[1]))
+                        {
+                            const {videos} = await yts(args.slice(1).join(" "));
+                            if (!videos.length)
+                            {
+                                message.channel.send("There were no songs with this name or url, please try again");
+                                break;
+                            }
+                            stream = ytdl(videos[0].url, {filter: 'audioonly'});
+                            song.title = videos[0].title;
+                            song.url = videos[0].url;
+                            let songInfo = await ytdl.getInfo(videos[0].url);
+                            song.length = songInfo.videoDetails.lengthSeconds;
+                        }
+                        else
+                        {
+                            stream = ytdl(args[1], {filter: 'audioonly'});
+                            let songInfo = await ytdl.getInfo(args[1]);
+                            song.title = songInfo.videoDetails.title;
+                            song.url = args[1];
+                            song.length = songInfo.videoDetails.lengthSeconds;
+                        }
+                        queue.push(song);
+                        if (!playing)
+                            startMusic(voiceChannel);
+                        break;
+                    }
+                    if (args[0] === "search")
+                    {
+                        const {videos} = await yts(args.slice(1).join(" "));
+                        if (!videos.length) return message.channel.send("There we no songs related to this name. Please try a new title");
+                        const song = {
+                            title : videos[0].title,
+                            url: videos[0].url
+                        };
+                        message.channel.send(song.url);
+                        break;
+                    }
+                    if (args[0] === "queue")
+                    {
+                        let outputString = ''
+                        for (var song = 0; song < queue.length; song++)
+                        {
+                            let currentSong = queue[song];
+                            outputString += `${song + 1}.) ${currentSong.title} | ${currentSong.url}\n`;
+                        }
+                        message.channel.send(outputString).then(msg => msg.suppressEmbeds());
+                        break;
+                    }
+                    if (args[0] === "skip")
+                    {
+                        const voiceChannel = message.member.voice.channel;
+                        if (!voiceChannel)
+                        {
+                            message.reply("Please join a voice channel to use this bot");
+                            break;
+                        }
+                        queue.shift();
+                        startMusic(voiceChannel);
+                        break;
+                    }
+                    if (args[0] === "pause")
+                    {
+                        dispatcher.pause();
+                        break;
+                    }
+                    if (args[0] === "resume")
+                    {
+                        dispatcher.resume();
+                        break;
+                    }
+                    message.channel.send(`The music command requires arguments see '${PREFIX}help music' for more information`);
+                }
+                break;
 
             case "..":
                 break;
 
             default:
-                message.channel.send(`The command ".${command_name}" was not found. Type ".commands" to see the commands you can use`);
+                message.channel.send(`The command "${PREFIX}${command_name}" was not found. Type "${PREFIX}commands" to see the commands you can use`);
                 break;
         }
 
