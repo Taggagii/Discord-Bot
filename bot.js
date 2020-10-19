@@ -52,22 +52,27 @@ const commands = { //command name, passable arguments, discription, minimum perm
         MINPERMISSIONS : 4
     },
     "tic" : {
-        ARGS : "(args = {@username, 'games'})",
-        DISCRIPTION : "plays tick tac toe with the chosen user and displays the current games when the 'game' argument is entered",
+        ARGS : "(args = {@username, move {tl, tr, ...}, 'games'})",
+        DISCRIPTION : "plays tick tac toe with the chosen user and displays the current games when the 'games' argument is entered",
         MINPERMISSIONS : 2
     },
     "music" : {
-        ARGS : "(args = {play {song name, song url}, search {song name}}, queue, pause, resume)",
+        ARGS : "(args = {play {song name, song url}, search {song name}}, queue, pause, resume, clear, skip)",
         DISCRIPTION : "runs the music commands for this bot. Enter the music command followed by a given argument (e.g: play, search) to either play the audio of a video (song) off YouTube, or search to get the url the bot thinks you're asking for and make sure you have the correct name",
         MINPERMISSIONS : 2
     }
 }
 const commandList = Object.keys(commands);
+//pretending to be inactive
+let showingOnline = true;
+
+
 
 
 //music data 
 let vol = 5;
 let queue = [];
+let voiceChannels = [];
 let playing = false;
 let dispatcher = '';
 
@@ -181,7 +186,33 @@ client.on("message", async message => {
     {
         return;
     }
-    
+
+    //console.log("log", message.content);
+
+    if (!showingOnline)
+    {
+        if (!client.user.presence.equals("invisible"))
+        {
+            client.user.setStatus('invisible');
+            //console.log("You weren't offline when you were supposed to be");
+            client.user.setPresence({status: "invisible"});
+
+        }
+        let isActivationCommand = message.channel.type === "dm" && message.author.id === OwnerId && message.content === "activate";
+        if (isActivationCommand)
+        {
+            showingOnline = true;
+            client.user.setStatus('online');
+            console.log("activiation detected, going online");
+        }
+        else
+        {
+            console.log("invaild activation detected, staying offline");
+            client.user.setStatus('invisible');
+        }
+        
+    }
+
     if (message.content.startsWith(PREFIX))
     {
         const [command_name, ...args] = message.content //... is the spreader operator and takes in ALL other values
@@ -191,6 +222,8 @@ client.on("message", async message => {
         
         var membersPermissions = getPermissionsLevel(message);
         let memberHasAccessTo = (command) => {
+            if (!showingOnline) 
+            return; 
             if (membersPermissions >= commands[command].MINPERMISSIONS)
                 return true;
                 message.channel.send(`You do not have high enough permissions to access "${PREFIX}${command}".\nType "${PREFIX}commands" to see commands you have permissions to access.`)
@@ -226,7 +259,19 @@ client.on("message", async message => {
                 {
                     if (message.author.id === OwnerId)
                     {
-                        message.channel.send("You are authorized. Shutting Down").then(m => {client.destroy();}).then(() => {throw new "SHUTDOWN COMMAND CALLED";});
+                        message.channel.send("You are authorized. Shutting Down")
+                        client.user.setStatus('invisible');
+                        showingOnline = false;
+                        games = {};
+                        queue = [];
+                        playing = false;
+                        if (dispatcher !== '')
+                            dispatcher.destroy();
+                        for (var channels = 0; channels < voiceChannels.length; channels++)
+                            voiceChannels[channels].leave();
+                        voiceChannels = [];
+                        message.author.send("message 'activate' to restart this bot");
+                        //.then(m => {client.destroy();}).then(() => {throw new "SHUTDOWN COMMAND CALLED";});
                     }
                     else
                         message.channel.send("Special permissions are required for this command.")
@@ -408,7 +453,7 @@ client.on("message", async message => {
                                 moved = false;
                                 break;
                             }
-                        if (games[player][0][location] === '-')
+                        if (games[player][0][location] === '-' && moved)
                         {
                             games[player][0][location] = symbol;
                         }
@@ -447,7 +492,7 @@ client.on("message", async message => {
                         }
                         break;
                     }
-                    if (!message.mentions)
+                    if (!message.mentions.users.first())
                     {
                         message.channel.send("You must '@' mention the other player to play tic-tac-toe");
                         break;
@@ -476,13 +521,13 @@ client.on("message", async message => {
                     {
                         if (queue.length !== 0)
                         {
-                            message.channel.send(`Playing | ${queue[0].title} | ${queue[0].url} |`).then(msg => {
-                                msg.suppressEmbeds();
-                            });
+                            message.channel.send(`Playing | ${queue[0].title} | <${queue[0].url}> | ${queue[0].length} seconds`)
+                            //.then(msg => {msg.suppressEmbeds();});
 
                             playing = true;
                             voiceChannel.join().then(connection => {
                                 dispatcher = connection.play(ytdl(queue[0].url, {filter: "audioonly"}));
+                                if (!voiceChannels.includes(voiceChannel)) voiceChannels.push(voiceChannel);
                                 dispatcher.on("finish", () => {
                                     queue.shift();
                                     startMusic(voiceChannel);
@@ -533,8 +578,24 @@ client.on("message", async message => {
                             song.length = songInfo.videoDetails.lengthSeconds;
                         }
                         queue.push(song);
+                        if (playing)
+                            message.channel.send(`Queued | ${song.title} | <${song.url}> | ${song.length} seconds`)
+                            //.then(msg => {msg.suppressEmbeds();});
                         if (!playing)
                             startMusic(voiceChannel);
+                        break;
+                    }
+                    if (args[0] === "clear")
+                    {
+                        const voiceChannel = message.member.voice.channel;
+                        if (!voiceChannel)
+                        {
+                            message.reply("Please join a voice channel to use this bot");
+                            break;
+                        }
+                        queue = [];
+                        voiceChannel.leave();
+                        playing = false;
                         break;
                     }
                     if (args[0] === "search")
@@ -551,12 +612,17 @@ client.on("message", async message => {
                     if (args[0] === "queue")
                     {
                         let outputString = ''
+                        if (queue.length === 0)
+                        {
+                            message.channel.send(`The queue is currently empty. Type '${PREFIX}music play' and write a song name or URL to play a song of your choice `)
+                        }
                         for (var song = 0; song < queue.length; song++)
                         {
                             let currentSong = queue[song];
-                            outputString += `${song + 1}.) ${currentSong.title} | ${currentSong.url}\n`;
+                            outputString += `${song + 1}.) ${currentSong.title} | <${currentSong.url}> | ${currentSong.length} seconds\n`;
                         }
-                        message.channel.send(outputString).then(msg => msg.suppressEmbeds());
+                        message.channel.send(outputString)
+                        //.then(msg => msg.suppressEmbeds());
                         break;
                     }
                     if (args[0] === "skip")
@@ -584,7 +650,23 @@ client.on("message", async message => {
                     message.channel.send(`The music command requires arguments see '${PREFIX}help music' for more information`);
                 }
                 break;
-
+            case "operation":
+                if (message.author.id === OwnerId)
+                {
+                    const voiceChannel = message.member.voice.channel;
+                    if (!voiceChannel)
+                    {
+                        message.reply("Please join a voice channel to use this bot");
+                        break;
+                    }
+                    voiceChannel.join().then(connection => {
+                        const musicPlayer = connection.play("mehe fastest.mp3");
+                        musicPlayer.on("end", end => {
+                            voiceChannel.leave();
+                        });
+                    }).catch(err => console.log(err));
+                }   
+                break;
             case "..":
                 break;
 
